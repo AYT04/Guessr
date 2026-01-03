@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlaGuessr - Flag Guessing Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        .flag-container {
+            aspect-ratio: 3 / 2;
+            position: relative;
+            overflow: hidden;
+            border-radius: 1rem;
+            background: #1e293b;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            border: 4px solid #334155;
+        }
+
+        .flag-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            z-index: 10;
+        }
+
+        .tile {
+            background-color: #334155;
+            border: 1px solid #1e293b;
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .tile.revealed {
+            opacity: 0;
+            transform: scale(1.1);
+            pointer-events: none;
+        }
+
+        #target-flag {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+
+        .autocomplete-items {
+            position: absolute;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1e293b;
+            border-radius: 0.5rem;
+            margin-top: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            border: 1px solid #334155;
+        }
+
+        .autocomplete-item {
+            padding: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #334155;
+        }
+
+        .autocomplete-item:hover {
+            background-color: #475569;
+        }
+
+        .softlock-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-blur: 12px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.75rem;
+        }
+
+        .screen {
+            display: none;
+            width: 100%;
+            max-width: 450px;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        .auth-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            padding: 2rem;
+            border-radius: 1.5rem;
+            width: 100%;
+            max-width: 380px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4">
+
+    <!-- MAIN MENU SCREEN -->
+    <div id="menu-screen" class="screen active mt-20 text-center">
+        <h1 class="text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-blue-400 via-emerald-400 to-indigo-500 mb-2">
+            FLAGUESSR
+        </h1>
+        <p class="text-slate-500 font-bold uppercase tracking-[0.2em] text-sm mb-12">Global Flag Identification</p>
+        
+        <div class="w-full flex flex-col gap-4">
+            <button id="start-game-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl transition-all shadow-xl active:scale-95 text-xl tracking-tight">
+                START ROUND
+            </button>
+            <button id="nav-auth-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-4 rounded-2xl transition-all active:scale-95 border border-slate-700">
+                ACCOUNT / LOGIN
+            </button>
+            <!-- Credits Button -->
+            <button id="nav-credits-btn" class="w-full bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl transition-all active:scale-95 border border-slate-800 text-sm">
+                CREDITS
+            </button>
+        </div>
+        
+        <p class="mt-12 text-slate-600 text-[10px] uppercase font-bold tracking-widest">Guest session active (8 minute limit)</p>
+    </div>
+
+    <!-- CREDITS MODAL -->
+    <div id="credits-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-xs w-full text-center flex flex-col gap-4 shadow-2xl">
+            <div class="bg-blue-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h2 class="text-2xl font-black text-white">CREATED BY</h2>
+            <p class="text-blue-400 font-bold text-xl tracking-tight">AYT04 Inc.</p>
+            <p class="text-slate-400 text-sm leading-relaxed">Developing digital experiences for flag enthusiasts worldwide since 2025.</p>
+            <button id="close-credits" class="mt-4 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-2xl transition-all">
+                CLOSE
+            </button>
+        </div>
+    </div>
+
+    <!-- AUTH SCREEN -->
+    <div id="auth-screen" class="screen mt-10">
+        <div class="auth-card shadow-2xl">
+            <h2 id="auth-title" class="text-2xl font-black mb-1">Create Account</h2>
+            <p id="auth-subtitle" class="text-slate-400 text-xs mb-6 font-medium">Join to remove the session limit.</p>
+            
+            <form id="auth-form" class="flex flex-col gap-4">
+                <div>
+                    <label class="text-[10px] font-black text-slate-500 uppercase ml-1">Username</label>
+                    <input type="text" id="auth-user" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-white mt-1">
+                </div>
+                <div>
+                    <label class="text-[10px] font-black text-slate-500 uppercase ml-1">Password</label>
+                    <input type="password" id="auth-pass" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 text-white mt-1">
+                </div>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl transition-all mt-2 shadow-lg active:scale-95">
+                    CONFIRM
+                </button>
+            </form>
+            
+            <button id="toggle-auth" class="w-full mt-4 text-xs font-bold text-slate-500 hover:text-blue-400 transition-colors">
+                Already have an account? Log In
+            </button>
+            <button id="auth-back" class="w-full mt-2 text-xs font-bold text-slate-500 hover:text-white transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen" class="screen">
+        <header class="w-full flex justify-between items-center py-6">
+            <div>
+                <button id="back-to-menu" class="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1 hover:text-slate-300 transition-colors mb-1">
+                    ← Quit Round
+                </button>
+                <h1 class="text-2xl font-black tracking-tighter text-blue-400">ROUND ACTIVE</h1>
+            </div>
+            <div id="user-display" class="bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700 flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                <span id="display-username" class="text-[10px] font-black text-slate-300 uppercase">GUEST</span>
+            </div>
+        </header>
+
+        <div class="w-full flex flex-col gap-6">
+            <div id="game-board" class="flag-container flex items-center justify-center">
+                <!-- Softlock UI -->
+                <div id="lock-overlay" class="softlock-overlay hidden text-center p-8">
+                    <div class="bg-blue-500/10 p-4 rounded-full mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </div>
+                    <p class="text-white font-black text-2xl mb-2 uppercase tracking-tighter">SESSION EXPIRED</p>
+                    <p class="text-slate-400 text-sm mb-8 leading-relaxed">Guest accounts are limited to 8 minutes of playtime. Register now to save your progress and unlock the full game.</p>
+                    <button id="lock-signup-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-5 rounded-2xl transition-all shadow-xl active:scale-95 text-lg">
+                        SIGN UP NOW
+                    </button>
+                </div>
+
+                <img id="target-flag" alt="Target Flag" class="hidden">
+                <div id="overlay" class="flag-overlay">
+                    <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+                    <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+                    <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+                </div>
+            </div>
+
+            <div id="input-container" class="relative">
+                <div class="flex gap-2">
+                    <div class="relative flex-grow">
+                        <input type="text" id="country-input" autocomplete="off" placeholder="Country name..." 
+                            class="w-full bg-slate-800 border-2 border-slate-700 rounded-xl px-4 py-4 focus:outline-none focus:border-blue-500 transition-colors shadow-inner text-white disabled:opacity-50">
+                        <div id="autocomplete-list" class="autocomplete-items hidden"></div>
+                    </div>
+                    <button id="submit-guess" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-4 rounded-xl transition-all active:scale-95 shadow-lg disabled:opacity-50">
+                        GUESS
+                    </button>
+                </div>
+                <p id="message" class="mt-2 text-center text-sm font-semibold text-slate-400 min-h-[1.5rem]"></p>
+            </div>
+
+            <div id="guesses" class="flex flex-col gap-2 h-40 overflow-y-auto pr-1"></div>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-xs w-full text-center flex flex-col gap-4 shadow-2xl">
+            <h2 id="modal-title" class="text-3xl font-black italic">Game Over</h2>
+            <div class="w-full aspect-[3/2] rounded-lg overflow-hidden border-2 border-slate-700 my-2">
+                <img id="modal-flag-img" src="" alt="Winner Flag" class="w-full h-full object-cover">
+            </div>
+            <p id="modal-message" class="text-slate-300 text-sm"></p>
+            <div class="flex flex-col gap-2 mt-2">
+                <button id="play-again" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-4 rounded-2xl transition-all shadow-lg active:scale-95">
+                    NEXT ROUND
+                </button>
+                <button id="menu-btn-final" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-2xl transition-all active:scale-95 text-sm">
+                    MAIN MENU
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allCountries = [];
+        let targetCountry = null;
+        let attempts = 0;
+        let isGameOver = false;
+        let isSoftlocked = false;
+        let currentUser = null; 
+        
+        let playStartTime = null;
+        let sessionTimer = null;
+        const GUEST_LIMIT_MS = 500000;
+
+        // Elements
+        const menuScreen = document.getElementById('menu-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const authScreen = document.getElementById('auth-screen');
+        const creditsModal = document.getElementById('credits-modal');
+        const flagImg = document.getElementById('target-flag');
+        const input = document.getElementById('country-input');
+        const submitBtn = document.getElementById('submit-guess');
+        const lockOverlay = document.getElementById('lock-overlay');
+        const guessesContainer = document.getElementById('guesses');
+        const message = document.getElementById('message');
+        const modal = document.getElementById('modal');
+        const autocompleteList = document.getElementById('autocomplete-list');
+        const displayUsername = document.getElementById('display-username');
+
+        // Auth Elements
+        const authForm = document.getElementById('auth-form');
+        const authTitle = document.getElementById('auth-title');
+        const authToggle = document.getElementById('toggle-auth');
+        let isSignUp = true;
+
+        async function fetchCountries() {
+            try {
+                const response = await fetch('https://restcountries.com/v3.1/all?fields=name,cca2');
+                const data = await response.json();
+                allCountries = data.map(c => ({
+                    name: c.name.common,
+                    code: c.cca2.toLowerCase()
+                })).sort((a, b) => a.name.localeCompare(b.name));
+            } catch (err) {
+                console.error("API Error:", err);
+            }
+        }
+
+        function switchScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function startSessionTimer() {
+            if (currentUser) return;
+            
+            playStartTime = Date.now();
+            sessionTimer = setInterval(() => {
+                const elapsed = Date.now() - playStartTime;
+                if (elapsed >= GUEST_LIMIT_MS && !currentUser) {
+                    triggerSoftlock();
+                    clearInterval(sessionTimer);
+                }
+            }, 1000);
+        }
+
+        function initGame() {
+            if (allCountries.length === 0) return;
+            targetCountry = allCountries[Math.floor(Math.random() * allCountries.length)];
+            attempts = 0;
+            isGameOver = false;
+            isSoftlocked = false;
+            
+            flagImg.src = `https://flagcdn.com/w640/${targetCountry.code}.png`;
+            flagImg.classList.remove('hidden');
+            
+            guessesContainer.innerHTML = '';
+            message.textContent = '';
+            input.value = '';
+            input.disabled = false;
+            submitBtn.disabled = false;
+            lockOverlay.classList.add('hidden');
+            modal.classList.add('hidden');
+
+            document.querySelectorAll('.tile').forEach(tile => tile.classList.remove('revealed'));
+            revealRandomTile();
+            
+            switchScreen('game-screen');
+            startSessionTimer();
+        }
+
+        function revealRandomTile() {
+            const hiddenTiles = Array.from(document.querySelectorAll('.tile:not(.revealed)'));
+            if (hiddenTiles.length > 0) {
+                const randomTile = hiddenTiles[Math.floor(Math.random() * hiddenTiles.length)];
+                randomTile.classList.add('revealed');
+            }
+        }
+
+        function handleGuess() {
+            if (isGameOver || isSoftlocked || !targetCountry) return;
+            const guessText = input.value.trim();
+            const guessCountry = allCountries.find(c => c.name.toLowerCase() === guessText.toLowerCase());
+
+            if (!guessCountry) {
+                showMessage("Country not found!", true);
+                return;
+            }
+
+            attempts++;
+            const isCorrect = guessCountry.name === targetCountry.name;
+            addGuessRow(guessCountry.name, isCorrect);
+
+            if (isCorrect) {
+                endGame(true);
+            } else {
+                revealRandomTile();
+                if (attempts >= 5) {
+                    endGame(false);
+                } else {
+                    input.value = '';
+                    showMessage(`${5 - attempts} attempts remaining`);
+                }
+            }
+        }
+
+        function triggerSoftlock() {
+            isSoftlocked = true;
+            input.disabled = true;
+            submitBtn.disabled = true;
+            lockOverlay.classList.remove('hidden');
+        }
+
+        function addGuessRow(name, isCorrect) {
+            const row = document.createElement('div');
+            row.className = `flex justify-between items-center p-4 rounded-xl bg-slate-800 border-l-4 shadow-sm mb-2 ${isCorrect ? 'border-emerald-500' : 'border-rose-500'}`;
+            row.innerHTML = `
+                <span class="font-bold text-slate-200">${name}</span>
+                <span class="text-xl">${isCorrect ? '✅' : '❌'}</span>
+            `;
+            guessesContainer.prepend(row);
+        }
+
+        function showMessage(msg, isError = false) {
+            message.textContent = msg;
+            message.className = `mt-2 text-center text-sm font-bold min-h-[1.5rem] ${isError ? 'text-rose-400 shake' : 'text-slate-400'}`;
+            if (isError) setTimeout(() => message.classList.remove('shake'), 500);
+        }
+
+        function endGame(won) {
+            isGameOver = true;
+            if (sessionTimer) clearInterval(sessionTimer);
+            input.disabled = true;
+            submitBtn.disabled = true;
+
+            document.querySelectorAll('.tile').forEach(tile => tile.classList.add('revealed'));
+
+            setTimeout(() => {
+                document.getElementById('modal-title').textContent = won ? "VICTORY!" : "DEFEAT";
+                document.getElementById('modal-title').className = `text-4xl font-black italic ${won ? 'text-emerald-400' : 'text-rose-500'}`;
+                document.getElementById('modal-flag-img').src = flagImg.src;
+                document.getElementById('modal-message').innerHTML = won 
+                    ? `Correct! You found <strong>${targetCountry.name}</strong>.` 
+                    : `The country was <strong>${targetCountry.name}</strong>.`;
+                modal.classList.remove('hidden');
+            }, 800);
+        }
+
+        // Auth Logic
+        authForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = document.getElementById('auth-user').value;
+            currentUser = { username: username };
+            displayUsername.textContent = username;
+            
+            if (isSoftlocked) {
+                isSoftlocked = false;
+                input.disabled = false;
+                submitBtn.disabled = false;
+                lockOverlay.classList.add('hidden');
+            }
+            
+            if (sessionTimer) clearInterval(sessionTimer);
+            switchScreen('menu-screen');
+        });
+
+        authToggle.addEventListener('click', () => {
+            isSignUp = !isSignUp;
+            authTitle.textContent = isSignUp ? "Create Account" : "Log In";
+            authToggle.textContent = isSignUp ? "Already have an account? Log In" : "Need an account? Sign Up";
+        });
+
+        // Input Autocomplete
+        input.addEventListener('input', () => {
+            const val = input.value;
+            autocompleteList.innerHTML = '';
+            if (!val || val.length < 1) {
+                autocompleteList.classList.add('hidden');
+                return;
+            }
+            const matches = allCountries.filter(c => c.name.toLowerCase().includes(val.toLowerCase())).slice(0, 5);
+            if (matches.length > 0) {
+                matches.forEach(match => {
+                    const div = document.createElement('div');
+                    div.className = 'autocomplete-item font-medium text-slate-300';
+                    div.textContent = match.name;
+                    div.addEventListener('click', () => {
+                        input.value = match.name;
+                        autocompleteList.classList.add('hidden');
+                        handleGuess();
+                    });
+                    autocompleteList.appendChild(div);
+                });
+                autocompleteList.classList.remove('hidden');
+            }
+        });
+
+        // Navigation
+        document.getElementById('start-game-btn').addEventListener('click', initGame);
+        document.getElementById('nav-auth-btn').addEventListener('click', () => switchScreen('auth-screen'));
+        document.getElementById('auth-back').addEventListener('click', () => switchScreen('menu-screen'));
+        document.getElementById('lock-signup-btn').addEventListener('click', () => switchScreen('auth-screen'));
+        
+        // Credits Logic
+        document.getElementById('nav-credits-btn').addEventListener('click', () => {
+            creditsModal.classList.remove('hidden');
+        });
+        document.getElementById('close-credits').addEventListener('click', () => {
+            creditsModal.classList.add('hidden');
+        });
+
+        document.getElementById('back-to-menu').addEventListener('click', () => {
+            if (sessionTimer) clearInterval(sessionTimer);
+            switchScreen('menu-screen');
+        });
+        document.getElementById('menu-btn-final').addEventListener('click', () => switchScreen('menu-screen'));
+        document.getElementById('play-again').addEventListener('click', initGame);
+        submitBtn.addEventListener('click', handleGuess);
+        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleGuess(); });
+
+        fetchCountries();
+    </script>
+</body>
+</html>

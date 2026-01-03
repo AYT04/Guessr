@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smashing Cups: The Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+
+        :root {
+            --bg-color: #f1f5f9;
+            --cup-color: #ffffff;
+            --rim-color: #cbd5e1;
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-main: #0f172a;
+            --accent: #3b82f6;
+            --secondary: #8b5cf6;
+            --shadow: rgba(0,0,0,0.1);
+        }
+
+        [data-theme='dark'] {
+            --bg-color: #020617;
+            --cup-color: #f8fafc;
+            --rim-color: #334155;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-main: #f1f5f9;
+            --accent: #60a5fa;
+            --secondary: #a78bfa;
+            --shadow: rgba(0,0,0,0.4);
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow: hidden;
+            touch-action: manipulation;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            user-select: none;
+            transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 var(--shadow);
+        }
+
+        #game-area {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 5;
+        }
+
+        .main-cup-wrapper {
+            position: relative;
+            width: 220px;
+            height: 260px;
+            cursor: pointer;
+            transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 20;
+        }
+
+        .main-cup-wrapper:active {
+            transform: scale(0.92);
+        }
+
+        .cup-body {
+            width: 100%;
+            height: 100%;
+            background: var(--cup-color);
+            border: 5px solid var(--rim-color);
+            border-radius: 12px 12px 60px 60px;
+            box-shadow: inset -15px -10px 25px rgba(0,0,0,0.05), 0 20px 50px var(--shadow);
+            position: relative;
+        }
+
+        .cup-handle {
+            position: absolute;
+            right: -60px;
+            top: 60px;
+            width: 90px;
+            height: 110px;
+            border: 20px solid var(--cup-color);
+            border-left: none;
+            border-radius: 0 60px 60px 0;
+            z-index: -1;
+        }
+
+        .falling-cup {
+            position: absolute;
+            width: 60px;
+            height: 70px;
+            pointer-events: none;
+            z-index: 6;
+            opacity: 0.8;
+        }
+
+        .falling-cup .cup-body { border-width: 2px; border-radius: 4px 4px 20px 20px; }
+        .falling-cup .cup-handle { right: -15px; top: 15px; width: 20px; height: 30px; border-width: 5px; }
+
+        .ui-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 24px;
+            display: grid;
+            grid-template-columns: 320px 1fr 320px;
+            gap: 24px;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .ui-panel { pointer-events: auto; border-radius: 28px; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-content { flex: 1; overflow-y: auto; padding: 20px; }
+        .panel-header { padding: 20px; font-weight: 800; font-size: 1.25rem; border-bottom: 1px solid rgba(0,0,0,0.05); }
+
+        .item-card {
+            width: 100%;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-radius: 20px;
+            text-align: left;
+            transition: all 0.2s;
+            background: rgba(0,0,0,0.03);
+            border: 2px solid transparent;
+            display: none;
+        }
+
+        .item-card.unlocked { display: block; }
+        .upgrade-btn:not(:disabled):hover { background: rgba(59, 130, 246, 0.1); border-color: var(--accent); transform: translateY(-2px); }
+        .upgrade-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .shard { position: absolute; background: var(--cup-color); border: 1px solid var(--rim-color); pointer-events: none; }
+        @keyframes shatter {
+            0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) rotate(var(--tr)); opacity: 0; }
+        }
+
+        .floating-text {
+            position: absolute;
+            pointer-events: none;
+            font-weight: 800;
+            animation: floatUp 0.8s ease-out forwards;
+            z-index: 150;
+        }
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(0.8); opacity: 1; }
+            100% { transform: translateY(-120px) scale(1.2); opacity: 0; }
+        }
+
+        #toast-container { position: fixed; top: 30px; left: 50%; transform: translateX(-50%); z-index: 200; pointer-events: none; }
+        .toast { 
+            background: #10b981; 
+            color: white; 
+            padding: 16px 32px; 
+            border-radius: 20px; 
+            font-weight: 700; 
+            box-shadow: 0 10px 25px rgba(16, 185, 129, 0.4); 
+            margin-bottom: 10px; 
+            animation: toastIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        .toast.secret-ach { background: var(--secondary); box-shadow: 0 10px 25px rgba(139, 92, 246, 0.4); }
+        @keyframes toastIn { from { transform: translateY(-100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        .theme-toggle { pointer-events: auto; padding: 12px; border-radius: 16px; transition: transform 0.2s; }
+    </style>
+</head>
+<body data-theme="light">
+
+    <div id="game-area">
+        <div class="main-cup-wrapper" id="main-cup">
+            <div class="cup-body"></div>
+            <div class="cup-handle"></div>
+        </div>
+    </div>
+
+    <div class="ui-container">
+        <div class="flex flex-col gap-4">
+            <div class="ui-panel glass p-6">
+                <div class="text-xs font-bold opacity-50 uppercase tracking-widest mb-1">Vault</div>
+                <div class="text-4xl font-black text-blue-500" id="shard-count">0</div>
+                <div class="text-sm opacity-60 mt-2">Shards Collected</div>
+            </div>
+            <div class="ui-panel glass p-6">
+                <div class="text-xs font-bold opacity-50 uppercase tracking-widest mb-1">Carnage</div>
+                <div class="text-2xl font-black" id="smash-count">0</div>
+                <div class="text-sm opacity-60 mt-1">Total Cups Destroyed</div>
+            </div>
+            <div class="mt-auto">
+                <button class="theme-toggle glass" onclick="toggleTheme()">
+                    <svg id="moon-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                    <svg id="sun-icon" class="w-6 h-6 hidden text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M16.95 16.95l.707.707M7.05 7.05l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z"></path></svg>
+                </button>
+            </div>
+        </div>
+
+        <div></div>
+
+        <div class="flex flex-col gap-6">
+            <div class="ui-panel glass h-[90%]">
+                <div class="panel-header">Shop</div>
+                <div class="panel-content" id="shop-items"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script>
+        const gameState = {
+            shards: 0,
+            totalSmashed: 0,
+            multiplier: 1,
+            autoSmashers: 0,
+            critChance: 0.05,
+            passiveIncome: 0,
+            rainActive: false,
+            completedAchievements: new Set()
+        };
+
+        const costs = { hammer: 50, auto: 300, polish: 1500, passive: 5000, rain: 15000, nuke: 100000 };
+
+        const shopItems = [
+            { id: 'hammer', title: 'Heavy Hammer', desc: '+1 shard per smash', costKey: 'hammer', unlock: 0 },
+            { id: 'auto', title: 'Auto-Tapper', desc: 'Clicks the cup for you', costKey: 'auto', unlock: 10 },
+            { id: 'polish', title: 'Slick Finish', desc: '+5% Critical Chance', costKey: 'polish', unlock: 50 },
+            { id: 'passive', title: 'Shard Forge', desc: 'Generates shards passively', costKey: 'passive', unlock: 100 },
+            { id: 'rain', title: 'Ceramic Storm', desc: 'Cups fall from the sky', costKey: 'rain', unlock: 250 },
+            { id: 'nuke', title: 'The Smasher 9000', desc: 'Massive income boost', costKey: 'nuke', unlock: 1000 }
+        ];
+
+        const achievements = [
+            { id: '1', title: 'First Crack', goal: 1, bonus: 100 },
+            { id: '10', title: 'Clumsy Hands', goal: 10, bonus: 500 },
+            { id: '100', title: 'Bull in China Shop', goal: 100, bonus: 5000 },
+            { id: '500', title: 'Ceramic Terror', goal: 500, bonus: 25000 },
+            { id: '1000', title: 'Industrial Demolition', goal: 1000, bonus: 100000 },
+            { id: '5000', title: 'End of Pottery', goal: 5000, bonus: 500000 },
+            { id: 'imp1', title: 'Impossible Clicker I', goal: 10000, bonus: 1000000, secret: true },
+            { id: 'imp2', title: 'Impossible Clicker II', goal: 50000, bonus: 5000000, secret: true },
+            { id: 'imp3', title: 'Impossible Clicker III', goal: 100000, bonus: 10000000, secret: true }
+        ];
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(isCrit) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.frequency.setValueAtTime(isCrit ? 1200 : 800 + Math.random()*200, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function initUI() {
+            const shop = document.getElementById('shop-items');
+            shopItems.forEach(item => {
+                const btn = document.createElement('button');
+                btn.id = `buy-${item.id}`;
+                btn.className = 'item-card upgrade-btn glass';
+                if (item.unlock === 0) btn.classList.add('unlocked');
+                btn.onclick = () => buyUpgrade(item.id, item.costKey);
+                btn.innerHTML = `<div class="font-bold">${item.title}</div><div class="text-xs opacity-60">${item.desc}</div><div class="text-blue-500 font-bold mt-1 cost-val">${costs[item.costKey]}</div>`;
+                shop.appendChild(btn);
+            });
+        }
+
+        function updateUI() {
+            document.getElementById('shard-count').textContent = Math.floor(gameState.shards).toLocaleString();
+            document.getElementById('smash-count').textContent = gameState.totalSmashed.toLocaleString();
+
+            shopItems.forEach(item => {
+                const btn = document.getElementById(`buy-${item.id}`);
+                if (gameState.totalSmashed >= item.unlock) btn.classList.add('unlocked');
+                btn.disabled = gameState.shards < costs[item.costKey];
+                btn.querySelector('.cost-val').textContent = costs[item.costKey].toLocaleString();
+            });
+
+            achievements.forEach(ach => {
+                if (gameState.totalSmashed >= ach.goal && !gameState.completedAchievements.has(ach.id)) {
+                    gameState.completedAchievements.add(ach.id);
+                    gameState.shards += ach.bonus;
+                    showAchievementPopup(ach);
+                }
+            });
+        }
+
+        function showAchievementPopup(ach) {
+            const t = document.createElement('div');
+            t.className = `toast ${ach.secret ? 'secret-ach' : ''}`;
+            t.innerHTML = `
+                <div class="text-xs uppercase tracking-widest opacity-80 mb-1">${ach.secret ? 'Secret Achievement' : 'Achievement Unlocked'}</div>
+                <div class="text-lg font-black">${ach.title}</div>
+                <div class="text-sm font-bold opacity-90">+${ach.bonus.toLocaleString()} Shards</div>
+            `;
+            document.getElementById('toast-container').appendChild(t);
+            setTimeout(() => {
+                t.style.opacity = '0';
+                t.style.transform = 'translateY(-20px)';
+                setTimeout(() => t.remove(), 500);
+            }, 4000);
+        }
+
+        function shatter(x, y, isCrit, isMain = true) {
+            let reward = (isMain ? 10 : 2) * gameState.multiplier;
+            if (isCrit) reward *= 5;
+            gameState.shards += reward;
+            if (isMain) gameState.totalSmashed++;
+
+            playSound(isCrit);
+            showFloatingText(`+${Math.floor(reward)}`, x, y, isCrit);
+            for (let i = 0; i < (isCrit ? 20 : 10); i++) createShard(x, y, isCrit);
+            updateUI();
+        }
+
+        function createShard(x, y, isCrit) {
+            const shard = document.createElement('div');
+            shard.className = 'shard';
+            const size = Math.random() * 20 + 5;
+            shard.style.width = shard.style.height = size + 'px';
+            if (isCrit) shard.style.background = '#fbbf24';
+            shard.style.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
+            shard.style.left = x + 'px'; shard.style.top = y + 'px';
+            const tx = (Math.random() - 0.5) * 400;
+            const ty = (Math.random() - 0.5) * 400 + 200;
+            const tr = (Math.random() - 0.5) * 720;
+            shard.style.setProperty('--tx', `${tx}px`); shard.style.setProperty('--ty', `${ty}px`); shard.style.setProperty('--tr', `${tr}deg`);
+            shard.style.animation = 'shatter 0.6s ease-out forwards';
+            document.body.appendChild(shard);
+            setTimeout(() => shard.remove(), 600);
+        }
+
+        function showFloatingText(text, x, y, isCrit) {
+            const el = document.createElement('div');
+            el.className = 'floating-text';
+            el.textContent = text;
+            el.style.left = x + 'px'; el.style.top = y + 'px';
+            el.style.color = isCrit ? '#f59e0b' : 'var(--accent)';
+            el.style.fontSize = isCrit ? '2rem' : '1.25rem';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 800);
+        }
+
+        function createFallingCup() {
+            const cup = document.createElement('div');
+            cup.className = 'falling-cup';
+            cup.innerHTML = `<div class="cup-body"></div><div class="cup-handle"></div>`;
+            document.body.appendChild(cup);
+            let px = Math.random() * window.innerWidth;
+            let py = -100;
+            let vy = 2 + Math.random() * 4;
+            let rot = 0;
+            const anim = () => {
+                py += vy; rot += 2;
+                cup.style.transform = `translate(${px}px, ${py}px) rotate(${rot}deg)`;
+                if (py > window.innerHeight) {
+                    shatter(px, py - 50, false, false);
+                    cup.remove();
+                } else requestAnimationFrame(anim);
+            };
+            requestAnimationFrame(anim);
+        }
+
+        function buyUpgrade(id, key) {
+            if (gameState.shards >= costs[key]) {
+                gameState.shards -= costs[key];
+                if (id === 'hammer') gameState.multiplier += 1;
+                if (id === 'auto') gameState.autoSmashers++;
+                if (id === 'polish') gameState.critChance += 0.05;
+                if (id === 'passive') gameState.passiveIncome += 50;
+                if (id === 'rain') gameState.rainActive = true;
+                if (id === 'nuke') gameState.multiplier *= 5;
+                costs[key] = Math.floor(costs[key] * 1.8);
+                updateUI();
+            }
+        }
+
+        document.getElementById('main-cup').onclick = (e) => {
+            shatter(e.clientX, e.clientY, Math.random() < gameState.critChance, true);
+        };
+
+        function toggleTheme() {
+            const b = document.body;
+            b.setAttribute('data-theme', b.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+            document.getElementById('moon-icon').classList.toggle('hidden');
+            document.getElementById('sun-icon').classList.toggle('hidden');
+        }
+
+        setInterval(() => {
+            if (gameState.autoSmashers > 0) {
+                const rect = document.getElementById('main-cup').getBoundingClientRect();
+                shatter(rect.left + rect.width/2, rect.top + rect.height/2, Math.random() < gameState.critChance, true);
+            }
+        }, 1000);
+
+        setInterval(() => {
+            if (gameState.passiveIncome > 0) {
+                gameState.shards += gameState.passiveIncome / 10;
+                updateUI();
+            }
+        }, 100);
+
+        setInterval(() => {
+            if (gameState.rainActive && Math.random() > 0.7) createFallingCup();
+        }, 800);
+
+        window.onload = () => { initUI(); updateUI(); };
+    </script>
+</body>
+</html>
